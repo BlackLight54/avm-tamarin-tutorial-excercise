@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# tamarin — run tamarin-prover, locally if installed, otherwise from the pinned
+# Docker image with the repository mounted at /workspace.
+#
+#   scripts/tamarin --prove -D=ADV_A exercise/exercise.spthy
+#
+# Paths must be relative to the repository root.
+# Set TAMARIN_FORCE_DOCKER=1 to ignore a local installation.
+set -euo pipefail
+
+IMAGE="${TAMARIN_IMAGE:-lmandrelli/tamarin-prover:1.10.0}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if command -v tamarin-prover >/dev/null 2>&1 && [[ -z "${TAMARIN_FORCE_DOCKER:-}" ]]; then
+  cd "$ROOT"
+  exec tamarin-prover "$@"
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "tamarin-prover is not on PATH and docker is not available." >&2
+  echo "Install Tamarin (https://tamarin-prover.com/install.html) or Docker." >&2
+  exit 1
+fi
+
+exec docker run --rm -v "$ROOT":/workspace -w /workspace "$IMAGE" tamarin-prover "$@"

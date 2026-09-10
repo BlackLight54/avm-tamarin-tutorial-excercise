@@ -1,0 +1,40 @@
+// piLCcrypto.spthy — the authenticated channel of piLC, realized.
+//
+// Same interface, same adversary capability, but no ideal !Auth fact:
+// every pool has a signing key, the sender signs <sender, receiver, payload>,
+// the message goes over the raw network (Out / In), and the receiver verifies.
+//
+// The lemmas in exercise.spthy do not change. If the ideal channel was
+// an honest abstraction of this one, every result should be the same.
+
+// Key setup: one long-term key per pool, public key published.
+rule Register_Key:
+    [ Fr(~ltk) ]
+    --[ KeyRegistered($P) ]->
+    [ !Ltk($P, ~ltk), !Pk($P, pk(~ltk)), Out(pk(~ltk)) ]
+
+restriction one_key_per_pool:
+    "All P #i #j. KeyRegistered(P) @ #i & KeyRegistered(P) @ #j ==> #i = #j"
+
+// R-  sign on the way out, verify on the way in.
+rule ChanOut_LC_Crypto:
+    [ MsgOut(pid, $A, $B, x), !Ltk($A, k) ]
+    --[]->
+    [ Out(<$A, $B, x, sign(<$A, $B, x>, k)>) ]
+
+rule ChanIn_LC_Crypto:
+    [ In(<$A, $B, x, s>), !Pk($A, pkA), !Setup(pid) ]
+    --[ Eq(verify(s, <$A, $B, x>, pkA), true) ]->
+    [ MsgIn(pid, $A, $B, x) ]
+
+restriction Eq:
+    "All a b #i. Eq(a, b) @ #i ==> a = b"
+
+// R+  A dishonest pool signs any model-valid message with its own key.
+rule Adv_Send_LC_Crypto:
+    [ !Adv($A),
+      !ModelEdge($A, e, $B, m),
+      !Ltk($A, k),
+      Fr(~pid) ]
+    --[ Sent(~pid, $A, m) ]->
+    [ Out(<$A, $B, m, sign(<$A, $B, m>, k)>) ]

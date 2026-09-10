@@ -1,0 +1,68 @@
+/*
+ * exercise.spthy — the take-home exercise.
+ *
+ * The process layer and the lemmas are the ones from the lecture. The channel
+ * layer is yours: edit mychannel.spthy. Run with the coordinator dishonest:
+ *
+ *   scripts/tamarin --prove -D=ADV_A exercise/exercise.spthy
+ *
+ * or simply:  scripts/check-exercise.sh
+ */
+
+theory Exercise
+begin
+
+builtins: signing
+
+#include "../model/process.spthy"
+#include "mychannel.spthy"
+
+// Sanity: something must actually get through your channel. As shipped,
+// mychannel.spthy delivers nothing, so this lemma is falsified and every
+// safety lemma below is verified for the wrong reason: vacuously.
+lemma delivery_works:
+  exists-trace
+  "Ex pid m #i. Received(pid, 'B', 'A', m) @ #i"
+
+lemma gateway_exclusive [reuse]:
+  "not(Ex pid #i #j.
+    Act(pid, 'A', 'gateway', 'branch_B') @ #i
+    & Act(pid, 'A', 'gateway', 'branch_C') @ #j)"
+
+// G1
+lemma no_bifurcation:
+  "All pid pk pl pi1 pi2 m1 m2 #i #j #e.
+    Received(pid, pk, pi1, m1) @ #i
+    & Received(pid, pl, pi2, m2) @ #j
+    & Exclusive(m1, m2) @ #e
+    ==> m1 = m2"
+
+// G2
+lemma non_repudiation:
+  "All pid pj pi m #i.
+    Received(pid, pj, pi, m) @ #i
+    ==> (Ex pid_s #j. Sent(pid_s, pi, m) @ #j)"
+
+// G3
+lemma faithful_history:
+  "All pid_s pi pj pid_r pi_r m #i #j.
+    Sent(pid_s, pi, m) @ #j & Received(pid_r, pj, pi_r, m) @ #i
+    ==> (Ex parent e #k. Act(pid_s, pi, parent, e) @ #k & not(#j < #k))"
+
+// G4
+lemma authorized_progression:
+  "All pid pj pi_r m #i.
+    Received(pid, pj, pi_r, m) @ #i
+    ==> (Ex pi pid_s #j. Sent(pid_s, pi, m) @ #j & #j < #i)"
+
+// G7
+lemma instance_isolation:
+  "All pid pj pi_r m #i.
+    Received(pid, pj, pi_r, m) @ #i
+    ==> (Ex pi #j. Sent(pid, pi, m) @ #j)"
+
+// G6a
+lemma value_secrecy:
+  "All x #i. Secret(x) @ #i ==> not(Ex #j. K(x) @ #j)"
+
+end

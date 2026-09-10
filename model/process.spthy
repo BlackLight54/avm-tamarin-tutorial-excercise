@@ -1,0 +1,160 @@
+// process.spthy — Process layer.
+//
+// One rule per BPMN element. St(pid, pool, element) is the token.
+// This layer never mentions Out or In: a message leaves through
+// MsgOut(pid, sender, receiver, payload) and arrives through
+// MsgIn(pid, sender, receiver, payload). What happens in between is the
+// channel layer's business.
+
+// ---- Static model annotations (derived from the collaboration graph) ----
+// !ModelEdge(sender, throw_element, receiver, payload)   message flows
+// !ExclPair(m1, m2)                                       downstream of distinct gateway branches
+// !ContractEdge(from, to, sender, receiver, payload)      the same graph as a state machine (used by PiSC)
+// Exclusive / Secret are action facts the lemmas quantify over.
+
+rule ModelSetup:
+    [ Fr(~award_B), Fr(~award_C), Fr(~order_B), Fr(~order_C) ]
+    --[ Exclusive(~award_B, ~award_C),
+        Exclusive(~order_B, ~order_C),
+        Secret(~award_B), Secret(~award_C),
+        Secret(~order_B), Secret(~order_C) ]->
+    [ !ModelEdge('A', 'throw_award_B', 'B', ~award_B),
+      !ModelEdge('B', 'throw_order_B', 'A', ~order_B),
+      !ModelEdge('A', 'throw_award_C', 'C', ~award_C),
+      !ModelEdge('C', 'throw_order_C', 'A', ~order_C),
+      !ExclPair(~award_B, ~award_C), !ExclPair(~award_C, ~award_B),
+      !ExclPair(~order_B, ~order_C), !ExclPair(~order_C, ~order_B),
+      !ContractEdge('start',            'awaiting_order_B', 'A', 'B', ~award_B),
+      !ContractEdge('start',            'awaiting_order_C', 'A', 'C', ~award_C),
+      !ContractEdge('awaiting_order_B', 'done',             'B', 'A', ~order_B),
+      !ContractEdge('awaiting_order_C', 'done',             'C', 'A', ~order_C) ]
+
+// ---- Process instantiation: one fresh pid, a start token in every pool ----
+rule Init:
+    [ Fr(~pid) ]
+    --[ Init(~pid) ]->
+    [ St(~pid, 'A', 'start'),
+      St(~pid, 'B', 'start'),
+      St(~pid, 'C', 'start'),
+      !Setup(~pid) ]
+
+// ===========================================================================
+// Pool A — the coordinator. Honest rules, unless ADV_A replaces them by a
+// single marker fact that the channel layer's R+ rules pick up.
+// ===========================================================================
+#ifdef ADV_A
+rule Adv_Mark_A:
+    [] --[]-> [ !Adv('A') ]
+#else
+
+rule A_Start:
+    [ St(pid, 'A', 'start') ]
+    --[ Act(pid, 'A', 'A', 'start') ]->
+    [ St(pid, 'A', 'evaluate') ]
+
+rule A_Evaluate:
+    [ St(pid, 'A', 'evaluate') ]
+    --[ Act(pid, 'A', 'A', 'evaluate') ]->
+    [ St(pid, 'A', 'gateway') ]
+
+// Exclusive gateway: two rules share one linear token, so only one fires.
+rule A_Gateway_B:
+    [ St(pid, 'A', 'gateway') ]
+    --[ Act(pid, 'A', 'gateway', 'branch_B') ]->
+    [ St(pid, 'A', 'throw_award_B') ]
+
+rule A_Gateway_C:
+    [ St(pid, 'A', 'gateway') ]
+    --[ Act(pid, 'A', 'gateway', 'branch_C') ]->
+    [ St(pid, 'A', 'throw_award_C') ]
+
+rule A_Throw_Award_B:
+    [ St(pid, 'A', 'throw_award_B'),
+      !ModelEdge('A', 'throw_award_B', 'B', payload) ]
+    --[ Act(pid, 'A', 'A', 'throw_award_B'),
+        Sent(pid, 'A', payload) ]->
+    [ St(pid, 'A', 'catch_order_B'),
+      MsgOut(pid, 'A', 'B', payload) ]
+
+rule A_Catch_Order_B:
+    [ St(pid, 'A', 'catch_order_B'),
+      MsgIn(pid, 'B', 'A', payload) ]
+    --[ Received(pid, 'A', 'B', payload) ]->
+    [ St(pid, 'A', 'merge') ]
+
+rule A_Throw_Award_C:
+    [ St(pid, 'A', 'throw_award_C'),
+      !ModelEdge('A', 'throw_award_C', 'C', payload) ]
+    --[ Act(pid, 'A', 'A', 'throw_award_C'),
+        Sent(pid, 'A', payload) ]->
+    [ St(pid, 'A', 'catch_order_C'),
+      MsgOut(pid, 'A', 'C', payload) ]
+
+rule A_Catch_Order_C:
+    [ St(pid, 'A', 'catch_order_C'),
+      MsgIn(pid, 'C', 'A', payload) ]
+    --[ Received(pid, 'A', 'C', payload) ]->
+    [ St(pid, 'A', 'merge') ]
+
+rule A_End:
+    [ St(pid, 'A', 'merge') ]
+    --[ Act(pid, 'A', 'A', 'end'), Done(pid) ]->
+    [ ]
+
+#endif
+
+// ===========================================================================
+// Pool B — supplier.
+// ===========================================================================
+#ifdef ADV_B
+rule Adv_Mark_B:
+    [] --[]-> [ !Adv('B') ]
+#else
+
+rule B_Catch_Award:
+    [ St(pid, 'B', 'start'),
+      MsgIn(pid, 'A', 'B', payload) ]
+    --[ Received(pid, 'B', 'A', payload) ]->
+    [ St(pid, 'B', 'prepare_order') ]
+
+rule B_Prepare_Order:
+    [ St(pid, 'B', 'prepare_order') ]
+    --[ Act(pid, 'B', 'B', 'prepare_order') ]->
+    [ St(pid, 'B', 'throw_order_B') ]
+
+rule B_Throw_Order:
+    [ St(pid, 'B', 'throw_order_B'),
+      !ModelEdge('B', 'throw_order_B', 'A', payload) ]
+    --[ Act(pid, 'B', 'B', 'throw_order_B'),
+        Sent(pid, 'B', payload) ]->
+    [ MsgOut(pid, 'B', 'A', payload) ]
+
+#endif
+
+// ===========================================================================
+// Pool C — supplier, structurally identical to B.
+// ===========================================================================
+#ifdef ADV_C
+rule Adv_Mark_C:
+    [] --[]-> [ !Adv('C') ]
+#else
+
+rule C_Catch_Award:
+    [ St(pid, 'C', 'start'),
+      MsgIn(pid, 'A', 'C', payload) ]
+    --[ Received(pid, 'C', 'A', payload) ]->
+    [ St(pid, 'C', 'prepare_order') ]
+
+rule C_Prepare_Order:
+    [ St(pid, 'C', 'prepare_order') ]
+    --[ Act(pid, 'C', 'C', 'prepare_order') ]->
+    [ St(pid, 'C', 'throw_order_C') ]
+
+rule C_Throw_Order:
+    [ St(pid, 'C', 'throw_order_C'),
+      !ModelEdge('C', 'throw_order_C', 'A', payload) ]
+    --[ Act(pid, 'C', 'C', 'throw_order_C'),
+        Sent(pid, 'C', payload) ]->
+    [ MsgOut(pid, 'C', 'A', payload) ]
+
+#endif

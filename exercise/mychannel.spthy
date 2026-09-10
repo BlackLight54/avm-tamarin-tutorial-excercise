@@ -1,0 +1,47 @@
+// mychannel.spthy — YOUR channel layer.
+//
+// Task: build the "loose coupling" platform: an authenticated channel.
+//
+//   Contract with the process layer
+//     consume   MsgOut(pid, $A, $B, x)
+//     produce   MsgIn(pid, $A, $B, x)     (eventually, for the right $A, $B, x)
+//
+//   Platform properties to encode
+//     1. the sender identity cannot be forged by the network adversary
+//     2. the payload is visible to the network (authenticated, not confidential)
+//     3. the channel does not carry the instance id: the receiver has to pick
+//        pid up from an existing instance (!Setup(pid) is available for that)
+//
+// Before you write anything: predict the results column for a dishonest A.
+//
+//     G1 no_bifurcation         ___
+//     G2 non_repudiation        ___
+//     G3 faithful_history       ___
+//     G4 authorized_progression ___
+//     G7 instance_isolation     ___
+//     G6a value_secrecy         ___
+//
+// Then uncomment and complete the two rules. Facts you can use: anything you
+// invent (a new fact symbol is just a name), plus Out(x) and In(x) to talk to
+// the network, and !Setup(pid) from the process layer. Remember: a fact
+// prefixed with ! is persistent and can be consumed any number of times.
+
+// rule ChanOut_Mine:
+//     [ MsgOut(pid, $A, $B, x) ]
+//     --[]->
+//     [ ??? ]
+
+// rule ChanIn_Mine:
+//     [ ??? ]
+//     --[]->
+//     [ MsgIn(pid, $A, $B, x) ]
+
+// Leave this one as it is. It is what a dishonest pool can do on this
+// platform: send any message the model allows, under its own name, without
+// holding a process token.
+rule Adv_Send_Mine:
+    [ !Adv($A),
+      !ModelEdge($A, e, $B, m),
+      Fr(~pid) ]
+    --[ Sent(~pid, $A, m) ]->
+    [ MsgOut(~pid, $A, $B, m) ]

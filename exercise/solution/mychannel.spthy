@@ -1,0 +1,28 @@
+// mychannel.spthy — reference solution: the ideal authenticated channel.
+//
+// Expected column with a dishonest A:
+//   G1 F   G2 V   G3 F   G4 V   G7 F   G6a F
+//
+// Why: the !Auth fact can only be produced by ChanOut_Mine, so a delivered
+// message was really sent by $A (G2, G4 hold). It is persistent, so it can be
+// delivered more than once, and pid comes from !Setup, so instances are not
+// separated (G7 fails). Out(x) shows the payload to the network (G6a fails).
+// A dishonest A sends award_B and award_C without a gateway token (G1 fails),
+// and never executed its process (G3 fails).
+
+rule ChanOut_Mine:
+    [ MsgOut(pid, $A, $B, x) ]
+    --[]->
+    [ !Auth($A, $B, x), Out(x) ]
+
+rule ChanIn_Mine:
+    [ !Auth($A, $B, x), !Setup(pid) ]
+    --[]->
+    [ MsgIn(pid, $A, $B, x) ]
+
+rule Adv_Send_Mine:
+    [ !Adv($A),
+      !ModelEdge($A, e, $B, m),
+      Fr(~pid) ]
+    --[ Sent(~pid, $A, m) ]->
+    [ MsgOut(~pid, $A, $B, m) ]
